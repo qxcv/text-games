@@ -7,10 +7,10 @@ If you just want to have a sense with what text-based games look like, you can t
  - [Machine of Death](http://www.ifarchive.org/if-archive/games/competition2013/web/machineofdeath/MachineOfDeath.html)
  - [Fantasy World](http://horizondark.com:8000/webclient/) (Thanks to Karthik for providing the reference.)
 
-### Python simulators (under text-games/simulators/, dependencies: Python 2.7)
+### Python simulators (under text-games/simulators/, dependencies: Python 3.X)
 This directory contains three text game simulators, including **Saving John** and **Machine of Death** mentioned in [1], and **Fantasy World** mentioned in [2].
 
-**Saving John** and **Machine of Death** are converted from their original .html source codes. They are stand-alone simulators and should be easy to run from text-games/simulators/MySimulator.py
+**Saving John** and **Machine of Death** are converted from their original .html source codes. They are stand-alone simulators and should be easy to run from text-games/simulators/text_game_simulator.py
 
 **Fantasy World** requires installing the [Evennia package and text-world](https://github.com/mrkulk/text-world). The game is played in socket mode. If you are more familar with python, you don't have to install the Lua framework provided by [text-world-player](https://github.com/karthikncode/text-world-player). After you have installed both Evennia and text-world, the following steps should be done to start the server and create the world:
  - On the server end, ./start.sh 1 # assuming we initiate only one game server
@@ -23,7 +23,7 @@ This directory contains three text game simulators, including **Saving John** an
 
 To run the game, simply:
 ```
-python text-games/simulators/MySimulator.py --name savingjohn --doShuffle True
+python text-games/simulators/text_game_simulator.py --name savingjohn --doShuffle True
 ```
 Note that the _name_ could be "savingjohn", "machineofdeath", or "fantasyworld". Setting the _doShuffle_ to True will randomly shuffle the list of actions every time they are presented. After typing the above command, you will see the following tuple of (state-text, list of action-texts, reward). The action order may differ:
 
@@ -33,14 +33,14 @@ You can continue the game by typing your choice of action (in integer number). F
 
 >('//"Knock, knock."//\\n//"Uh, who\'s there?"//\\n//"Orange."//\\n//"Hey, shut the fuck up over there!"//\\n//"Are you seriously telling --"//\\n//"I\'d like some oranges,"//\\n//"You don\'t deserve oranges,"//\\n//"Well you don\'t deserve to live!"//\\n//"Good one,"//\\n\\n//Someone laughs.//\\n\\n//"--knock knock jokes?"//\\n//"Orange you glad that I didn\'t kick your face in?"//\\n//"Catholic guilt at its best I suppose,"//\\n//"I need another shot..."//\\n//"Seriously, face palm,"//\\n\\nIt\'s the Fourth of July. I remember because it\'s the day I met \\nSam. "Uncle Sam\'s Birthday!" His nervous laughter was hard to \\nforget. \\n\\nHe wore an orange shirt with an orange slice on it, making him \\nthe joke of the party. I felt kind of bad for the guy; he left \\nthe party alone and no one could remember who had brought him \\nin the first place.\\n\\n', ['Continue'], 0)
 
-You can edit the main function in MySimulator.py to hook up with your own agent and RL framework. The interface of all three text games are designed so that they share the same interface:
+You can edit the main function in text_game_simulator.py to hook up with your own agent and RL framework. The interface of all three text games are designed so that they share the same interface:
 ```
 (text, actions, reward) = mySimulator.Read() # text is a string (state-text), actions is a list of strings, reward is a float
 mySimulator.Act(playerInput)                 # playerInput is an integer or a string, depending on which game
 mySimulator.Restart()                        # after the episode ends, restart the game
 ```
 
-For **Machine of Death**, we also provide a paraphrased action mode. You can import MachineOfDeathSimulator from MySimulator and initialize a second simulator with "doParaphrase = True".
+For **Machine of Death**, we also provide a paraphrased action mode. You can import MachineOfDeathSimulator from text_game_simulator and initialize a second simulator with "doParaphrase = True".
 
 The _name_\_\*Id.pickle in text-games/simulators store the vocabulary of each game. _name_\_\*wordId.pickle means state-side vocabulary, and _name_\_\*actionId.pickle means action-side vocabulary.
 
