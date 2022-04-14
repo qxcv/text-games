@@ -9,7 +9,6 @@ import html.parser
 import numpy as np
 import operator
 import os
-#import pdb; pdb.set_trace()
 try:
     import pickle as pickle
 except:
@@ -1122,6 +1121,7 @@ class MachineOfDeathSimulator:
             self.text += """XXXXXXXXXX\n"""
         if self.params['joviPlayed'] == 1:
             self.text += """SHOT THROUGH THE HEART BY BON JOVI\n"""
+
             self.current_links += ['SHOT THROUGH THE HEART BY BON JOVI']
             self.actions += ['SHOT THROUGH THE HEART BY BON JOVI']
         if self.params['joviPlayed'] == 0:
@@ -2348,7 +2348,7 @@ class MachineOfDeathSimulator:
         self.methodDict["Kitchen"]()
         return
 
-def GetSimulator(storyName, doShuffle):
+def get_simulator(storyName, doShuffle):
     # this method returns simulator, state/action vocabularies, and the maximum number of actions
     if storyName.lower() == "fantasyworld":
         with open(os.path.join(curDirectory, "fantasyworld_wordId.pickle"), "rb") as infile:
@@ -2377,7 +2377,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     startTime = time.time()
-    mySimulator, dict_wordId, dict_actionId, maxNumActions = GetSimulator(args.name, args.doShuffle == "True")
+    mySimulator, dict_wordId, dict_actionId, maxNumActions = get_simulator(args.name, args.doShuffle == "True")
     numEpisode = 0
     numStep = 0
     while numEpisode < 10:
@@ -2385,7 +2385,7 @@ if __name__ == "__main__":
         print('TEXT:', text)
         print('REWARD:', reward)
         print('ACTIONS:', ', '.join(
-            f'{a} ({idx})' for idx, a in enumerate(actions)))
+            f'({idx}) {a}' for idx, a in enumerate(actions)))
         if len(actions) == 0 or numStep > 250:
             terminal = True
             mySimulator.Restart()
