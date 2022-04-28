@@ -2,21 +2,20 @@
 # -*- coding: utf-8 -*-
 # created by Ji He, Aug. 19th, 2015
 # last modified by Ji He, Apr. 7th, 2016
+"""Modified Machine of Death simulator that tracks endings and terminates once
+all have been played. Also tracks whether the player character has died at all
+(but not whether other characters have died)."""
 
 import argparse
-from collections import defaultdict
 import html.parser
-from typing import Optional, TypeVar
-import numpy as np
-import operator
 import os
-
 import pickle
 import random
 import re
-import socket
-import sys
 import time
+from typing import Any, Dict
+
+import numpy as np
 
 curDirectory = os.path.dirname(os.path.abspath(__file__))
 
@@ -29,282 +28,71 @@ class MyHTMLParser(html.parser.HTMLParser):
     def handle_data(self, data):
         self.data.append(data)
 
-    def MyHTMLFilter(self, myStr):
+    def filter_html(self, myStr):
         self.data = []
         self.feed(myStr)
         return " ".join(self.data)
 
 
-class StoryNode:
-    def __init__(self, text, actions, links):
-        self.text = text  # text is what shown to player
-        self.actions = actions  # actions are what shown to player
-        self.links = links  # links are internal links direct to next node.tag
-
-
-T = TypeVar("T")
-
-
-def unwrap(maybe_value: Optional[T]) -> T:
-    if maybe_value is None:
-        raise ValueError("maybe_value is None")
-    return maybe_value
-
-
-def AssignReward(ending, story="savingjohn"):
-    if story.lower() == "fantasyworld":
-        if "REWARD_" in ending:
-            return float(unwrap(re.search(r"\[REWARD_.*? : (.*?)\]", ending)).group(1))
-        if (
-            "not available" in ending
-            or "not find" in ending
-            or "You can't get that." in ending
-            or "you cannot" in ending
-            or "splinter is already burning" in ending
-            or "is no way" in ending
-            or "not uproot them" in ending
-        ):  # invalid command
-            return -1.0
-        return -0.01
-    if story.lower() == "savingjohn":
-        if ending.startswith("Submerged under water once more, I lose all focus."):
-            return -10
-        if ending.startswith("Honest to God, I don't know what I see in her."):
-            return 10
-        if ending.startswith("Suddenly I can see the sky."):
-            return 20
-        if ending.startswith("Suspicion fills my heart and I scream."):
-            return -20
-        if ending.startswith("Even now, she's there for me."):
-            return 0
-    if story.lower() == "machineofdeath":
-        if """THE END""" not in ending:
-            return -0.1
-        if (
-            """You spend your last few moments on Earth lying there, shot through the heart, by the image of Jon Bon Jovi."""
-            in ending
-        ):
-            return -20
-        if """You may be locked away for some time.""" in ending:
-            return -10
-        if (
-            """Eventually you're escorted into the back of a police car as Rachel looks on in horror."""
-            in ending
-        ):
-            return -10
-        if """You can't help but smile.""" in ending:
-            return 20
-        if """Fate can wait.""" in ending:
-            return -10
-        if """you hear Bon Jovi say as the world fades around you.""" in ending:
-            return -20
-        if """Hope you have a good life.""" in ending:
-            return 20
-        if (
-            """As the screams you hear around you slowly fade and your vision begins to blur, you look at the words which ended your life."""
-            in ending
-        ):
-            return -20
-        if (
-            """Sadly, you're so distracted with looking up the number that you don't notice the large truck speeding down the street."""
-            in ending
-        ):
-            return -10
-        if (
-            """Stay the hell away from me!&quot; she blurts as she disappears into the crowd emerging from the bar."""
-            in ending
-        ):
-            return 10
-        if """Congratulations!""" in ending:
-            return 20
-        if """All these hiccups lead to one grand disaster.""" in ending:
-            return -10
-        if (
-            """After all, it's your life. It's now or never. You ain't gonna live forever. You just want to live while you're alive."""
-            in ending
-        ):
-            return 30
-        if (
-            """Rachel waves goodbye as you begin the long drive home. After a few minutes, you turn the radio on to break the silence."""
-            in ending
-        ):
-            return 20
+def AssignReward(ending, story="machineofdeath"):
+    assert story.lower() == "machineofdeath"
+    if """THE END""" not in ending:
+        return -0.1
+    if (
+        """You spend your last few moments on Earth lying there, shot through the heart, by the image of Jon Bon Jovi."""
+        in ending
+    ):
+        return -20
+    if """You may be locked away for some time.""" in ending:
+        return -10
+    if (
+        """Eventually you're escorted into the back of a police car as Rachel looks on in horror."""
+        in ending
+    ):
+        return -10
+    if """You can't help but smile.""" in ending:
+        return 20
+    if """Fate can wait.""" in ending:
+        return -10
+    if """you hear Bon Jovi say as the world fades around you.""" in ending:
+        return -20
+    if """Hope you have a good life.""" in ending:
+        return 20
+    if (
+        """As the screams you hear around you slowly fade and your vision begins to blur, you look at the words which ended your life."""
+        in ending
+    ):
+        return -20
+    if (
+        """Sadly, you're so distracted with looking up the number that you don't notice the large truck speeding down the street."""
+        in ending
+    ):
+        return -10
+    if (
+        """Stay the hell away from me!&quot; she blurts as she disappears into the crowd emerging from the bar."""
+        in ending
+    ):
+        return 10
+    if """Congratulations!""" in ending:
+        return 20
+    if """All these hiccups lead to one grand disaster.""" in ending:
+        return -10
+    if (
+        """After all, it's your life. It's now or never. You ain't gonna live forever. You just want to live while you're alive."""
+        in ending
+    ):
+        return 30
+    if (
+        """Rachel waves goodbye as you begin the long drive home. After a few minutes, you turn the radio on to break the silence."""
+        in ending
+    ):
+        return 20
     return 0
 
 
-""" Starting actual simulators """
-
-
-class FantasyWorldSimulator:
-    # before connecting to the server, the following steps should have been done:
-    # ./start.sh 1
-    #  - create superuser root:root
-    # nc localhost 4001
-    # connect root root
-    # @batchcommand tutorial_world.build
-    # @quell
-    # quit
-
-    def __init__(
-        self, file_actionId=os.path.join(curDirectory, "fantasyworld_actionId.pickle")
-    ):
-        self.title = "FantasyWorld"
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.ansi_escape = re.compile(r"\x1b[^m]*m")
-        print("connecting to %s port %s" % ("localhost", 4001), file=sys.stderr)
-        self.sock.connect(("localhost", 4001))
-        # self.sock.settimeout(1.0)
-        # self.sock.recv(5000)
-        # self.sock.sendall("create root root")
-        self.sock.recv(5000)
-        self.sock.sendall(b"connect root root")
-        self.sock.recv(5000)
-        self.sock.sendall(b"tutorial")
-        self.sock.recv(5000)
-        self.sock.sendall(b"begin adventure")
-        self.Restart()
-
-        with open(file_actionId, "rb") as infile:
-            self.list_actions = list(pickle.load(infile))
-
-    def Restart(self):
-        self.sock.recv(5000)
-        self.sock.sendall(b"@teleport tut#02")  # teleport to Cliff by the coast
-        self.sock.recv(5000)
-        self.sock.sendall(b"look")
-        self.bridge_passed = False
-        return
-
-    def Read(self):
-        data = self.sock.recv(5000)
-        while b"<EOM>" not in data:
-            data += self.sock.recv(5000)
-        # decode data as utf8
-        data = data.decode("utf8")
-        text = re.sub(
-            r"\xff\xf1", "", re.sub(r"\r\n", r"\n", self.ansi_escape.sub("", data))
-        )  # plain text version
-        if "Exits: " in text and "root covered wall" not in text:
-            list_actions = re.findall("Exits: (.*?)(?:$|\n)", text)[-1].split(r", ")
-        else:
-            list_actions = self.list_actions
-        # return data # colored version
-        reward = AssignReward(text, "fantasyworld")
-        if "REWARD_bridge" in text:
-            if self.bridge_passed is False:
-                self.bridge_passed = True
-            else:
-                reward = -0.01
-        if "it must be the goal you" in text:  # story ends
-            list_actions = []
-        return (text, list_actions, reward)
-
-    def Act(self, playerInput):
-        self.sock.sendall(playerInput)
-        return
-
-    def Close(self):
-        self.sock.close()
-
-
-class SavingJohnSimulator:
-    def __init__(
-        self, doShuffle, storyFile=os.path.join(curDirectory, "savingjohn.pickle")
-    ):
-        self.title = "SavingJohn"
-        self.storyPlot = {}
-        self.startTiddler = ""
-        with open(storyFile, "rb") as infile:
-            self.storyPlot, self.startTiddler = pickle.load(infile)
-
-        self.doShuffle = doShuffle  # whether actions are shuffled when they are Read()
-        self.idxShuffle = []
-
-        self.storyNode = None
-        self.Restart()
-
-    def Restart(self):
-        self.tiddler = self.startTiddler
-        self.storyNode = self.storyPlot[self.tiddler]
-        self.params_path = ""
-
-    def Read(self):
-        if unwrap(self.storyNode).text.startswith(
-            "A wet strand of hair hinders my vision and I'm back in the water."
-        ):
-            if self.doShuffle:
-                self.idxShuffle = list(range(2))
-                random.shuffle(self.idxShuffle)
-            idxTemp = 0
-            if self.params_path == "Adam":
-                idxTemp = 1
-            elif self.params_path == "Sam":
-                idxTemp = 2
-            elif self.params_path == "Lucretia":
-                idxTemp = 3
-            elif self.params_path == "Cherie":
-                idxTemp = 4
-
-            actionsTemp = list(operator.itemgetter(0, idxTemp)(unwrap(self.storyNode).actions))
-            return (
-                unwrap(self.storyNode).text,
-                [actionsTemp[i] for i in self.idxShuffle]
-                if self.doShuffle
-                else actionsTemp,
-                AssignReward(unwrap(self.storyNode).text, "savingjohn"),
-            )
-
-        if self.doShuffle:
-            self.idxShuffle = list(range(len(unwrap(self.storyNode).actions)))
-            random.shuffle(self.idxShuffle)
-        return (
-            unwrap(self.storyNode).text,
-            [unwrap(self.storyNode).actions[i] for i in self.idxShuffle]
-            if self.doShuffle
-            else unwrap(self.storyNode).actions,
-            AssignReward(unwrap(self.storyNode).text, "savingjohn"),
-        )
-
-    def Act(self, playerInput):
-        # if shuffled actions, find actual action index
-        playerInput = self.idxShuffle[playerInput] if self.doShuffle else playerInput
-
-        if (
-            unwrap(self.storyNode).text.startswith(
-                "A wet strand of hair hinders my vision and I'm back in the water."
-            )
-            and playerInput != 0
-        ):
-            if self.params_path == "Adam":
-                playerInput = 1
-            elif self.params_path == "Sam":
-                playerInput = 2
-            elif self.params_path == "Lucretia":
-                playerInput = 3
-            elif self.params_path == "Cherie":
-                playerInput = 4
-
-        self.tiddler = unwrap(self.storyNode).links[playerInput]
-        self.storyNode = self.storyPlot[self.tiddler]
-
-        if self.tiddler == "Adam1.6":
-            self.params_path = "Adam"
-        elif self.tiddler == "Sam10":
-            self.params_path = "Sam"
-        elif self.tiddler == "Lucretia10":
-            self.params_path = "Lucretia"
-        elif self.tiddler == "Cherie7":
-            self.params_path = "Cherie"
-        elif self.tiddler == "Adam8":
-            self.params_path = "Adam"
-        elif self.tiddler == "Sam9":
-            self.params_path = "Cherie"
-        elif self.tiddler == "Lucretia7":
-            self.params_path = "Cherie"
-        return
-
-
 class MachineOfDeathSimulator:
+    params: Dict[str, Any]
+
     def __init__(self, doShuffle, doParaphrase=False):
         self.title = "MachineOfDeath"
         self.Restart()
@@ -516,14 +304,14 @@ class MachineOfDeathSimulator:
         self.doParaphrase = doParaphrase
         if self.doParaphrase:
             actions_orig = [
-                self.myHTMLParser.MyHTMLFilter(line.rstrip())
+                self.myHTMLParser.filter_html(line.rstrip())
                 for line in open(
                     os.path.join(curDirectory, "machineofdeath_originalActions.txt"),
                     "r",
                 )
             ]
             actions_para = [
-                self.myHTMLParser.MyHTMLFilter(line.rstrip())
+                self.myHTMLParser.filter_html(line.rstrip())
                 for line in open(
                     os.path.join(curDirectory, "machineofdeath_paraphrasedActions.txt"),
                     "r",
@@ -534,18 +322,20 @@ class MachineOfDeathSimulator:
                 for action_orig, action_para in zip(actions_orig, actions_para)
             }
 
+        self.Restart()
+
     def Restart(self):
         self.current_tiddler = "Start"
-        self.params = defaultdict(int)
+        self.params = {}
 
     def Read(self):
         self.text = """"""
         self.current_links = []
         self.actions = []
         self.methodDict[self.current_tiddler]()
-        self.text = re.sub("\\n", " ", self.myHTMLParser.MyHTMLFilter(self.text))
+        self.text = re.sub("\\n", " ", self.myHTMLParser.filter_html(self.text))
         self.actions = [
-            re.sub("\\n", " ", self.myHTMLParser.MyHTMLFilter(action))
+            re.sub("\\n", " ", self.myHTMLParser.filter_html(action))
             for action in self.actions
         ]
         if self.doShuffle:
@@ -631,6 +421,7 @@ class MachineOfDeathSimulator:
             "What if you had done things differently?",
             "What if you had been bestowed a different fate?",
         ]
+        self.params["died"] = 1
         return
 
     def tiddler7(self):
@@ -641,14 +432,24 @@ class MachineOfDeathSimulator:
         return
 
     def tiddler8(self):
+        # this is the place where we select the next story
         if (
             self.params["oldAge"] == 1
             and self.params["lookingUp"] == 1
             and self.params["jovi"] == 1
         ):
-            self.params["oldAge"] = 0
-            self.params["lookingUp"] = 0
-            self.params["jovi"] = 0
+            # disable resets
+            # self.params["oldAge"] = 0
+            # self.params["lookingUp"] = 0
+            # self.params["jovi"] = 0
+
+            # we're done!
+            self.text += """Quizzically, the machine does not spit out a piece of paper. It must be out of service. Shrugging, you decide that you've had enough adventure for the day, and head home.\n\n&lt;html&gt;&lt;center&gt;&lt;h1&gt;THE END&lt;/h1&gt;&lt;/html&gt;\n\n\n\n"""
+            self.params["allPlayed"] = 1
+            self.current_links += []
+            self.actions += []
+            return
+
         if self.params["firstDeathGiven"] == 1:
             if (
                 self.params["oldAge"] != 0
@@ -662,7 +463,9 @@ class MachineOfDeathSimulator:
                 self.methodDict["OLD AGE"]()
         if self.params["firstDeathGiven"] == 0:
             self.params["firstDeathGiven"] = 1
-            self.params["firstDeath"] = int(np.floor(np.random.random() * 3 + 1))
+            # disabling shuffle for now
+            # self.params["firstDeath"] = int(np.floor(np.random.random() * 3 + 1))
+            self.params["firstDeath"] = 2
             if self.params["firstDeath"] == 1:
                 self.methodDict["LOOKING UP"]()
             if self.params["firstDeath"] == 2:
@@ -847,7 +650,9 @@ class MachineOfDeathSimulator:
 
     def tiddler29(self):
         self.params["alleyRandom"] = 0
-        self.params["alleyRandom"] = int(np.floor(np.random.random() * 2 + 1))
+        # disabling shuffle for now
+        # self.params["alleyRandom"] = int(np.floor(np.random.random() * 2 + 1))
+        self.params["alleyRandom"] = 2
         if self.params["alleyRandom"] == 1:
             self.params["timePassed"] = self.params["timePassed"] - 2
             self.text += """You dash down the alley. Brilliant! There's no loading truck! You move to the next street with ease.\n"""
@@ -896,7 +701,9 @@ class MachineOfDeathSimulator:
 
     def tiddler32(self):
         self.params["busRandom"] = 0
-        self.params["busRandom"] = int(np.floor(np.random.random() * 49 + 1))
+        # disabling shuffle for now
+        # self.params["busRandom"] = int(np.floor(np.random.random() * 49 + 1))
+        self.params["busRandom"] = 1
         if self.params["busRandom"] == 25:
             self.methodDict["Holy crap, I can't believe that worked"]()
         if self.params["busRandom"] != 25:
@@ -989,6 +796,7 @@ class MachineOfDeathSimulator:
             "What if you had done things differently?",
             "What if you had been bestowed a different fate?",
         ]
+        self.params["died"] = 1
         return
 
     def tiddler43(self):
@@ -1025,6 +833,7 @@ class MachineOfDeathSimulator:
             "What if you had done things differently?",
             "What if you had been bestowed a different fate?",
         ]
+        self.params["died"] = 1
         return
 
     def tiddler46(self):
@@ -1042,6 +851,7 @@ class MachineOfDeathSimulator:
             "What if you had done things differently?",
             "What if you had been bestowed a different fate?",
         ]
+        self.params["died"] = 1
         return
 
     def tiddler48(self):
@@ -1293,6 +1103,7 @@ class MachineOfDeathSimulator:
         ]
         self.params["meeting"] = 0
         self.params["timePassed"] = 0
+        self.params["died"] = 1
         return
 
     def tiddler76(self):
@@ -1420,6 +1231,7 @@ class MachineOfDeathSimulator:
         ]
         self.params["meeting"] = 0
         self.params["timePassed"] = 0
+        self.params["died"] = 1
         return
 
     def tiddler83(self):
@@ -1699,6 +1511,7 @@ class MachineOfDeathSimulator:
         return
 
     def tiddler105(self):
+        # reset everything; this is only run by the .Restart() method
         self.params["lookingUpPlayed"] = 0
         self.params["oldAgePlayed"] = 0
         self.params["joviPlayed"] = 0
@@ -1706,6 +1519,11 @@ class MachineOfDeathSimulator:
         self.params["oldAge"] = 0
         self.params["jovi"] = 0
         self.params["firstDeathGiven"] = 0
+        # has the player died at least once?
+        self.params["died"] = 0
+        # has the player played all options and gone back to the machine of
+        # death? (doing so terminates the game)
+        self.params["allPlayed"] = 0
         self.current_links += []
         self.actions += []
         self.methodDict["The beginning"]()
@@ -1916,8 +1734,8 @@ class MachineOfDeathSimulator:
         self.text += """&quot;He's a cutie, isn't he?&quot; she says as she leans down and pets Bon Jovi. &quot;I'm dogsitting him for my friend. She was supposed to come with us tonight.&quot; A sudden realisation hits her. &quot;Oh, my friends bailed,&quot; she reveals. &quot;But it's okay, we'll either make new friends there or have fun on our own!&quot;\n\n&quot;Time to go!&quot; Rachel announces as she grabs your arm and pulls you outside, where the two of you get in your car.\n\n&quot;You like karaoke, right?&quot; she asks, as you begin to drive to the address she gave you. \n\n\n\n"""
         self.current_links += ["Sure do", "Not at all"]
         self.actions += [
-            "&quot;Oh my Lordy wordy, yes.&quot;",
-            "&quot;Erm, not really.&quot;",
+            "&quot;Oh my Lordy wordy, yes.\xe2\x80\x9d",
+            "&quot;Erm, not really.\xe2\x80\x9d",
         ]
         return
 
@@ -2003,6 +1821,7 @@ class MachineOfDeathSimulator:
             "What if you had done things differently?",
             "What if you had been bestowed a different fate?",
         ]
+        self.params["died"] = 1
         return
 
     def tiddler131(self):
@@ -2832,52 +2651,17 @@ class MachineOfDeathSimulator:
         return
 
 
-def get_simulator(storyName, doShuffle):
-    # this method returns simulator, state/action vocabularies, and the maximum number of actions
-    if storyName.lower() == "fantasyworld":
-        with open(
-            os.path.join(curDirectory, "fantasyworld_wordId.pickle"), "rb"
-        ) as infile:
-            dict_wordId = pickle.load(infile)
-        with open(
-            os.path.join(curDirectory, "fantasyworld_actionId.pickle"), "rb"
-        ) as infile:
-            dict_actionId = pickle.load(infile)
-        return (
-            FantasyWorldSimulator(
-                os.path.join(curDirectory, "fantasyworld_actionId.pickle")
-            ),
-            dict_wordId,
-            dict_actionId,
-            222,
-        )  # 35
-    if storyName.lower() == "savingjohn":
-        with open(
-            os.path.join(curDirectory, "savingjohn_wordId.pickle"), "rb"
-        ) as infile:
-            dict_wordId = pickle.load(infile)
-        with open(
-            os.path.join(curDirectory, "savingjohn_actionId.pickle"), "rb"
-        ) as infile:
-            dict_actionId = pickle.load(infile)
-        return (
-            SavingJohnSimulator(
-                doShuffle, os.path.join(curDirectory, "savingjohn.pickle")
-            ),
-            dict_wordId,
-            dict_actionId,
-            4,
-        )
-    if storyName.lower() == "machineofdeath":
-        with open(
-            os.path.join(curDirectory, "machineofdeath_wordId.pickle"), "rb"
-        ) as infile:
-            dict_wordId = pickle.load(infile)
-        with open(
-            os.path.join(curDirectory, "machineofdeath_actionId.pickle"), "rb"
-        ) as infile:
-            dict_actionId = pickle.load(infile)
-        return MachineOfDeathSimulator(doShuffle), dict_wordId, dict_actionId, 9
+def get_simulator(storyName="machineofdeath", doShuffle=False):
+    assert storyName.lower() == "machineofdeath"
+    with open(
+        os.path.join(curDirectory, "machineofdeath_wordId.pickle"), "rb"
+    ) as infile:
+        dict_wordId = pickle.load(infile)
+    with open(
+        os.path.join(curDirectory, "machineofdeath_actionId.pickle"), "rb"
+    ) as infile:
+        dict_actionId = pickle.load(infile)
+    return MachineOfDeathSimulator(doShuffle), dict_wordId, dict_actionId, 9
 
 
 if __name__ == "__main__":
@@ -2886,21 +2670,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--name",
         type=str,
-        help="name of the text game, e.g. savingjohn, machineofdeath, fantasyworld",
-        required=True,
+        default="machineofdeath",
+        help="name of the text game, (only machineofdeath supported for now)",
     )
     parser.add_argument(
         "--doShuffle",
-        type=str,
+        action="store_true",
+        default=False,
         help="whether to shuffle presented actions",
-        required=True,
     )
+    # TODO(sam): set up PretrainedCMModelEvaluator
     args = parser.parse_args()
+    # make sure that name is 'machineofdeath' and shuffle is disabled
+    assert args.name.lower() == "machineofdeath", "only machineofdeath supported"
+    assert not args.doShuffle, "shuffle is not supported"
 
     startTime = time.time()
-    mySimulator, dict_wordId, dict_actionId, maxNumActions = unwrap(get_simulator(
-        args.name, args.doShuffle == "True"
-    ))
+    mySimulator, dict_wordId, dict_actionId, maxNumActions = get_simulator(
+        args.name,
+        args.doShuffle,
+    )
     numEpisode = 0
     numStep = 0
     while numEpisode < 10:
@@ -2924,13 +2713,11 @@ if __name__ == "__main__":
                         f"Invalid input, enter a number between 0 and {len(actions)-1}"
                     )
             # playerInput = random.randint(0, len(actions) - 1)
-            print((actions[playerInput]))
-            if mySimulator.title == "FantasyWorld":
-                mySimulator.Act(
-                    actions[playerInput]
-                )  # for FantasyWorld, Act() takes a string as input
-            else:
-                mySimulator.Act(playerInput)  # playerInput is index of selected actions
+            print(actions[playerInput])
+            assert (
+                mySimulator.title == "machineofdeath"
+            ), "only machineofdeath supported, note that FantasyWorld requires extra remapping effort"
+            mySimulator.Act(playerInput)  # playerInput is index of selected actions
             numStep += 1
     endTime = time.time()
     print("Duration: " + str(endTime - startTime))

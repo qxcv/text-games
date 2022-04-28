@@ -1,0 +1,5 @@
+# these versions are verified working on `gan`
+numpy~=1.22
+pandas~=1.4
+torch~=1.11.0
+transformers~=4.17
