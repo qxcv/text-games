@@ -64,4 +64,3 @@ target/
 # Newer tools not included above
 .pytype
 .flake8
-.vscode
