@@ -61,5 +61,8 @@ target/
 #Ipython Notebook
 .ipynb_checkpoints
 
-# Newer tools not included above
+# pytype
 .pytype
+
+# Models in root dir
+/*.pt
